@@ -1,7 +1,6 @@
 from __future__ import division
 
 import logging
-import random
 import warnings
 from collections import defaultdict
 from sys import argv
@@ -22,6 +21,7 @@ python nnet.py n LEARNING_RATE NUM_HIDDEN_NODES EPOCHS TRAIN_DATA TEST_DATA
 Logistic regression : 
 python nnet.py l LEARNING_RATE EPOCHS TRAIN_DATA TEST_DATA
 """
+
 
 class MetaData(object):
     def __init__(self, meta):
@@ -51,7 +51,7 @@ class DataSet(object):
             current_fdata = self.data[feature]
             if values_used:
                 mean = values_used[feature][0]
-                stdev = values_used[feature][0]
+                stdev = values_used[feature][1]
             else:
                 mean = np.mean(current_fdata)
                 stdev = np.std(current_fdata)
@@ -74,7 +74,6 @@ class SingleLayerNN(object):
         self.weights = 0
 
     def train(self, dataset):
-        random.seed(1)
         # TODO - set this after encoding x (duh)
         # one weight per feature + one extra bias weight
         num_weights = len(dataset.metadata.feature_names)
@@ -124,7 +123,8 @@ class SingleLayerNN(object):
             to_print.append(y)
             results.append(to_print)
             print "\t".join(map(str, to_print))
-        print correct_count
+        print "\t".join(map(str, (correct_count, len(dataset.data) - correct_count)))
+        print get_f1(results)
         return results
 
 
@@ -177,7 +177,7 @@ class NeuralNet(object):
                         w1_deltas[i][j] = learning_rate * hidden_unit_errors[j] * x[i]
                 self.w1 += w1_deltas
                 self.w2 += w2_deltas
-            print error, correct_count
+            print "%s\t%f\t%d\t%d" % (epoch + 1, error, correct_count, len(dataset.data) - correct_count)
 
     def test(self, dataset):
         correct_count = 0
@@ -199,7 +199,8 @@ class NeuralNet(object):
             to_print.append(y)
             results.append(to_print)
             print "\t".join(map(str, to_print))
-        print correct_count
+        print "\t".join(map(str, (correct_count, len(dataset.data) - correct_count)))
+        print get_f1(results)
         return results
 
 
@@ -235,15 +236,6 @@ def get_f1(results):
 sigmoid_np = np.vectorize(sigmoid)
 
 if __name__ == '__main__':
-    USAGE = """
-    1 hidden layer neural net : 
-    python nnet.py n LEARNING_RATE NUM_HIDDEN_NODES EPOCHS TRAIN_DATA TEST_DATA
-
-    Logistic regression : 
-    python nnet.py l LEARNING_RATE EPOCHS TRAIN_DATA TEST_DATA
-    """
-
-    # inputs
     mode = argv[1]
     if mode == "n":
         learning_rate = float(argv[2])
@@ -273,11 +265,9 @@ if __name__ == '__main__':
     if mode == "l":
         n1 = SingleLayerNN()
         n1.train(train_data)
-        results = n1.test(test_data)
-        print get_f1(results)
+        n1.test(test_data)
 
     elif mode == "n":
         n1 = NeuralNet(n_hidden)
         n1.train(train_data)
-        results = n1.test(test_data)
-        print get_f1(results)
+        n1.test(test_data)
