@@ -27,7 +27,7 @@ class MetaData(object):
     def __init__(self, meta):
         ranges = {}
         types = {}
-        for i, (feature_name, details) in enumerate(meta._attributes.iteritems()):
+        for _, (feature_name, details) in enumerate(meta._attributes.iteritems()):
             types[feature_name], ranges[feature_name] = details
         self.ranges = ranges
         self.types = types
@@ -73,11 +73,14 @@ class SingleLayerNN(object):
     def __init__(self):
         self.weights = 0
 
+    def init_weights(self, dataset):
+        sample = dataset.data[0]
+        sample_encoded = encode_inputs(sample, dataset)
+        num_weights = len(sample_encoded)
+        self.weights = np.random.uniform(-0.01, 0.01, num_weights)
+
     def train(self, dataset):
-        # TODO - set this after encoding x (duh)
-        # one weight per feature + one extra bias weight
-        num_weights = len(dataset.metadata.feature_names)
-        weights = np.random.uniform(-0.01, 0.01, num_weights)
+        self.init_weights(dataset)
         for epoch in range(epochs):
             results = []
             dataset.shuffle()
@@ -86,9 +89,9 @@ class SingleLayerNN(object):
             for _x, _y in zip(dataset.data, dataset.labels):
                 result = []
                 y = convert_label_to_int(dataset, _y)
-                x = encode_inputs(_x)
+                x = encode_inputs(_x, dataset)
                 # forward propagation
-                z1 = x.dot(weights)
+                z1 = x.dot(self.weights)
                 a1 = sigmoid(z1)
                 predicted = int(np.round(a1))
                 if predicted == y:
@@ -101,17 +104,16 @@ class SingleLayerNN(object):
                 error += - y * np.log(a1) - (1 - y) * np.log(1 - a1)
                 error_gradients = np.multiply(x, (a1 - y))
                 weight_delta = np.multiply(error_gradients, -learning_rate)
-                weights = np.add(weights, weight_delta)
+                self.weights = np.add(self.weights, weight_delta)
             print "%s\t%f\t%d\t%d" % (epoch + 1, error, correct_count, len(dataset.data) - correct_count)
             # print get_f1(results)
-        self.weights = weights
 
     def test(self, dataset):
         correct_count = 0
         results = []
         for _x, _y in zip(dataset.data, dataset.labels):
             to_print = []
-            x = encode_inputs(_x)
+            x = encode_inputs(_x, dataset)
             y = convert_label_to_int(dataset, _y)
             z1 = x.dot(self.weights)
             a1 = sigmoid(z1)
@@ -137,8 +139,10 @@ class NeuralNet(object):
         self.w2 = None
 
     def init_weights(self, dataset):
+        sample = dataset.data[0]
+        sample_encoded = encode_inputs(sample, dataset)
+        n_w1 = len(sample_encoded)
         # w1 is (num_inputs + 1) x (num hidden nodes)
-        n_w1 = len(dataset.metadata.feature_names)
         self.w1 = np.random.uniform(-0.01, 0.01, (n_w1, self.n_hidden))
         # w2 is (num_hidden + 1) x (1)
         self.w2 = np.random.uniform(-0.01, 0.01, self.n_hidden + 1)
@@ -152,7 +156,7 @@ class NeuralNet(object):
             for _x, _y in zip(dataset.data, dataset.labels):
                 # forward propagation
                 y = convert_label_to_int(dataset, _y)
-                x = encode_inputs(_x)
+                x = encode_inputs(_x, dataset)
                 a1 = x.dot(self.w1)
                 z1 = sigmoid_np(a1)
                 z1_with_bias = np.concatenate((np.ones(1), z1))
@@ -171,9 +175,9 @@ class NeuralNet(object):
                 w2_deltas = np.zeros(self.n_hidden + 1)
                 for i in range(self.n_hidden + 1):
                     w2_deltas[i] = learning_rate * out_unit_error * z1_with_bias[i]
-                w1_deltas = np.zeros((len(dataset.metadata.feature_names), self.n_hidden))
+                w1_deltas = np.zeros((len(x), self.n_hidden))
                 for j in range(self.n_hidden):
-                    for i in range(len(dataset.metadata.feature_names)):
+                    for i in range(len(x)):
                         w1_deltas[i][j] = learning_rate * hidden_unit_errors[j] * x[i]
                 self.w1 += w1_deltas
                 self.w2 += w2_deltas
@@ -185,7 +189,7 @@ class NeuralNet(object):
         for _x, _y in zip(dataset.data, dataset.labels):
             to_print = []
             y = convert_label_to_int(dataset, _y)
-            x = encode_inputs(_x)
+            x = encode_inputs(_x, dataset)
             a1 = x.dot(self.w1)
             z1 = sigmoid_np(a1)
             z1_with_bias = np.concatenate((np.ones(1), z1))
@@ -210,10 +214,29 @@ def convert_label_to_int(dataset, label):
     return dataset.metadata.ranges['class'].index(label)
 
 
-def encode_inputs(x):
+def encode_inputs(x, dataset):
     # TODO - handle nominal features
-    return np.concatenate([np.ones(1), np.array(x.tolist())])
+    encoded = []
+    for feature_name in dataset.metadata.feature_names:
+        feature_range =  dataset.metadata.ranges[feature_name]
+        if feature_name == "class":
+            continue
+        if feature_range is None :
+            # numeric feature
+            encoded.append(x[feature_name])
+        else :
+            # nominal feature
+            encoded.extend(one_hot_encode(x[feature_name], feature_range))
+    return np.concatenate([np.ones(1), np.array(encoded)])
 
+def one_hot_encode(item, item_list):
+    onehot_encoded = []
+    for i in item_list:
+        if i == item :
+            onehot_encoded.append(1)
+        else :
+            onehot_encoded.append(0)
+    return onehot_encoded
 
 def sigmoid(x):
     return 1 / (1 + np.exp(-x))
@@ -228,9 +251,13 @@ def get_f1(results):
             counts["fp"] += 1
         elif predicted == 0 and actual == 1:
             counts["fn"] += 1
-    precision = counts["tp"] / (counts["tp"] + counts["fp"])
-    recall = counts["tp"] / (counts["tp"] + counts["fn"])
-    return 2 * (precision * recall) / (precision + recall)
+    try :
+        precision = counts["tp"] / (counts["tp"] + counts["fp"])
+        recall = counts["tp"] / (counts["tp"] + counts["fn"])
+        f1 = 2 * (precision * recall) / (precision + recall)
+    except ZeroDivisionError:
+        return 0
+    return f1
 
 
 sigmoid_np = np.vectorize(sigmoid)
