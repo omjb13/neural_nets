@@ -178,7 +178,7 @@ class NeuralNet(object):
                 w1_deltas = np.zeros((len(x), self.n_hidden))
                 for j in range(self.n_hidden):
                     for i in range(len(x)):
-                        w1_deltas[i][j] = learning_rate * hidden_unit_errors[j] * x[i]
+                        w1_deltas[i][j] = learning_rate * hidden_unit_errors[j+1] * x[i]
                 self.w1 += w1_deltas
                 self.w2 += w2_deltas
             print "%s\t%f\t%d\t%d" % (epoch + 1, error, correct_count, len(dataset.data) - correct_count)
